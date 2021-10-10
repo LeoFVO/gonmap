@@ -2,24 +2,56 @@ package main
 import(
 	"fmt"
 	"net"
-	"sync"
+	"sort"
 )
 
-func main() {
-	var wg sync.WaitGroup // Allow use to synchronize main function with go routines
-	for i := 1; i <= 1024; i++ {
-		wg.Add(1) // Add 1 routine to group
-		go func (portNumber int) {
-			defer wg.Done() // remove 1 routine to group
-			address := fmt.Sprintf("scanme.nmap.org:%d", portNumber)
-			con, err := net.Dial("tcp", address)
-			if err != nil { 
-				// Port closed or filtered
-				return
-			}
-			con.Close()
-			fmt.Printf("%v open\n", portNumber)
-		}(i)
+/** 
+ * Define worker
+ * Get non treated port from channel and scan them
+ * Send number of port in results channel if opened, else 0
+*/
+func worker(ports chan int, results chan int) {
+	for p := range ports {
+		address := fmt.Sprintf("scanme.nmap.org:%d", p)
+		con, err := net.Dial("tcp", address)
+		if err != nil {
+			results <- 0
+			continue
+		}
+		con.Close()
+		results <- p
 	}
-	wg.Wait() // wait all routines ended before close.
+}
+
+func main() {
+	// Initialize variables
+	ports := make(chan int, 100)
+	results := make(chan int)
+	var openports []int
+
+	// Launch worker
+	for i := 0; i <= cap(ports); i++ {
+		go worker(ports, results)
+	}
+
+	// send port needing to be treated in channel
+	go func() {
+		for i := 1; i <= 1024; i++ {
+			ports <- i
+		}
+	}()
+
+	for i := 0; i < 1024; i++ {
+		port := <- results
+		if port != 0 {
+			openports = append(openports, port)
+		}
+	}
+
+	close(ports)
+	close(results)
+	sort.Ints(openports)
+	for _, port := range openports {
+		fmt.Printf("%d open\n", port)
+	}
 }
