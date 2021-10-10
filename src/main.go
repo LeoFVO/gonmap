@@ -14,6 +14,6 @@ func main() {
 			continue
 		}
 		con.Close()
-		fmt.Println("%d open\n", i)
+		fmt.Printf("%d open\n", i)
 	}
 }
