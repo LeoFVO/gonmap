@@ -1,57 +1,44 @@
 package main
-import(
+
+import (
 	"fmt"
 	"net"
-	"sort"
+	"os"
+	"strconv"
+	"time"
 )
 
-/** 
- * Define worker
- * Get non treated port from channel and scan them
- * Send number of port in results channel if opened, else 0
-*/
-func worker(ports chan int, results chan int) {
-	for p := range ports {
-		address := fmt.Sprintf("scanme.nmap.org:%d", p)
-		con, err := net.Dial("tcp", address)
-		if err != nil {
-			results <- 0
-			continue
-		}
-		con.Close()
-		results <- p
+func main() {
+	// get command line argument
+	if len(os.Args) != 2 {
+		fmt.Fprintf(os.Stderr, "Using: %s ip-addr\n", os.Args[0])
+		os.Exit(1)
+	}
+
+	target := os.Args[1] // target host
+
+	activeRoutine := 0
+	doneChannel := make(chan bool)
+
+	for port := 0; port <= 65535; port++ {
+		go testTCPConnection(target, port, doneChannel)
+		activeRoutine++
+	}
+	// Wait for all Routine to finish
+	for activeRoutine > 0 {
+		<-doneChannel
+		activeRoutine--
 	}
 }
 
-func main() {
-	// Initialize variables
-	ports := make(chan int, 100)
-	results := make(chan int)
-	var openports []int
+func testTCPConnection(ip string, port int, doneChannel chan bool) {
+	_, err := net.DialTimeout("tcp", ip+":"+strconv.Itoa(port),
+		time.Second*10)
+		// Uncomment next line to check all port scanned
+		// fmt.Printf("Port %d: Closed\n", port)
 
-	// Launch worker
-	for i := 0; i <= cap(ports); i++ {
-		go worker(ports, results)
+	if err == nil {
+		fmt.Printf("Port %d: Open\n", port)
 	}
-
-	// send port needing to be treated in channel
-	go func() {
-		for i := 1; i <= 1024; i++ {
-			ports <- i
-		}
-	}()
-
-	for i := 0; i < 1024; i++ {
-		port := <- results
-		if port != 0 {
-			openports = append(openports, port)
-		}
-	}
-
-	close(ports)
-	close(results)
-	sort.Ints(openports)
-	for _, port := range openports {
-		fmt.Printf("%d open\n", port)
-	}
+	doneChannel <- true
 }
